@@ -1,9 +1,17 @@
-/* Friday Proof — Black Friday 2026 deal finder.
+/* Friday Proof — Black Friday 2026 deal finder, v2.
    Dark "midnight sale" theme, warm amber accent. All layout is plain CSS:
    no fonts, no images, no network requests. Card art is a CSS gradient
-   tile with a category monogram, so the site stays fully self-contained.
-   Every colour used below is defined in :root; nothing is hard-coded
-   per-component, which keeps the dark theme consistent on desktop and phone. */
+   tile with a category monogram, and every price chart is inline SVG, so
+   the site stays fully self-contained. Every colour used below is defined
+   in :root; nothing is hard-coded per-component, which keeps the dark theme
+   consistent on desktop and phone.
+   v2 adds: the SVG price-proof bar, the red SKIP verdict, the "Was price
+   inflated" caveat badge, verdict chips with live counts, and the
+   "Check your own deal" calculator. The hero (intro + KPI strip) belongs
+   to the deal list: on detail, compare, check and how pages the app adds
+   body.compact, which hides the hero so the page content starts at the
+   top of the viewport. On phones the calculator panel is tightened so the
+   verdict and its price bar fit in the first screen. */
 :root {
   --bg: #0d0f14;
   --panel: #171a21;
@@ -20,6 +28,7 @@
   --blue-bg: #0e2237;
   --grey-bg: #262a33;
   --red: #ff6b6b;
+  --red-bg: #2b1214;
   --radius: 14px;
 }
 * { box-sizing: border-box; }
@@ -40,6 +49,7 @@ a { color: var(--amber); }
 .topnav a { color: var(--muted); text-decoration: none; margin-left: 22px; font-weight: 600; font-size: 15px; }
 .topnav a:hover { color: var(--ink); }
 .hero { padding: 18px 20px 22px; }
+body.compact .hero { display: none; }
 .kicker { color: var(--amber); font-weight: 800; letter-spacing: .12em; font-size: 12px; margin: 0 0 8px; }
 .hero h1 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.06; margin: 0 0 10px; letter-spacing: -0.02em; }
 .hero .sub { color: var(--muted); font-size: 16px; max-width: 760px; margin: 0 0 16px; }
@@ -67,7 +77,9 @@ a { color: var(--amber); }
   background: var(--panel2); border: 1px solid var(--line); color: var(--muted);
   border-radius: 999px; padding: 6px 13px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
 }
+.chip .n { background: rgba(255,255,255,.13); border-radius: 999px; padding: 0 7px; font-size: 12.5px; margin-left: 2px; }
 .chip[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
+.chip[aria-pressed="true"] .n { background: rgba(0,0,0,.18); color: var(--amber-ink); }
 .chip:hover { border-color: var(--amber); }
 .toggles { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: 14px; }
 .toggles label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
@@ -112,7 +124,9 @@ a { color: var(--amber); }
 .now small { font-size: 14px; font-weight: 600; color: var(--muted); }
 .was { color: var(--dim); text-decoration: line-through; font-size: 16px; }
 .off { background: var(--amber); color: var(--amber-ink); font-weight: 800; border-radius: 6px; padding: 2px 8px; font-size: 14px; }
+.off-skip { background: var(--red-bg); color: var(--red); border: 1px solid #6b1d20; }
 .save { color: var(--green); font-weight: 700; font-size: 14.5px; }
+.save-none { color: var(--red); }
 .verdict { border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.45; }
 .verdict b { display: block; font-size: 12.5px; letter-spacing: .1em; margin-bottom: 2px; }
 .verdict-new-low { background: var(--green-bg); border: 1px solid #1d5c36; }
@@ -121,6 +135,14 @@ a { color: var(--amber); }
 .verdict-strong b { color: var(--blue); }
 .verdict-routine { background: var(--grey-bg); border: 1px solid #3a3f4b; }
 .verdict-routine b { color: var(--muted); }
+.verdict-skip { background: var(--red-bg); border: 1px solid #6b1d20; }
+.verdict-skip b { color: var(--red); }
+.caveat {
+  display: inline-block; align-self: flex-start; background: var(--red-bg);
+  border: 1px solid #6b1d20; color: var(--red); font-weight: 800; font-size: 12.5px;
+  border-radius: 6px; padding: 2px 8px;
+}
+.verdict .caveat { margin-top: 8px; }
 .checked { color: var(--dim); font-size: 12.5px; }
 .card-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 6px; }
 .btn {
@@ -134,6 +156,14 @@ a { color: var(--amber); }
 .btn[aria-pressed="true"] { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
 .empty { background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius); padding: 40px 20px; text-align: center; color: var(--muted); margin-top: 14px; }
 .empty b { color: var(--ink); display: block; font-size: 18px; margin-bottom: 6px; }
+
+/* Price-proof bar (inline SVG, one per card and per detail page) */
+.proofbar { width: 100%; height: auto; display: block; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 2px; }
+.proofbar text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 11px; }
+.pb-sale-label { fill: var(--amber); font-size: 13px; font-weight: 800; }
+.pb-pct { font-size: 12.5px; font-weight: 800; }
+.pb-axis { stroke: #3a3f4b; stroke-width: 2; }
+.proof-note { color: var(--muted); font-size: 13.5px; margin: 0; line-height: 1.45; }
 
 /* Compare bar + table */
 .comparebar {
@@ -181,6 +211,25 @@ table.compare td .now { font-size: 22px; }
 .how li b, .how p b { color: var(--ink); }
 .srclist { font-size: 14.5px; }
 
+/* Check your own deal */
+.checker { margin-top: 22px; max-width: 820px; }
+.checker h1 { margin: 6px 0 4px; font-size: clamp(26px, 3.4vw, 38px); }
+.calc { margin-top: 16px; }
+.calc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.calc-grid label { font-weight: 700; font-size: 14px; display: grid; gap: 6px; align-content: start; }
+.calc-grid input {
+  background: var(--bg); border: 1px solid var(--line); color: var(--ink);
+  border-radius: 10px; padding: 11px 12px; font: inherit; width: 100%;
+}
+.calc-grid input:focus { outline: 2px solid var(--amber); outline-offset: 1px; }
+.calc-grid .hint { font-weight: 400; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.calc-links { margin: 12px 0 0; font-size: 14.5px; }
+.ck-empty { background: var(--panel2); border: 1px dashed var(--line); border-radius: 10px; padding: 16px; color: var(--muted); margin-top: 14px; }
+.ck-verdict { margin-top: 14px; }
+.ck-flag { color: var(--red); font-weight: 700; font-size: 14px; margin: 10px 0 0; }
+.ck-ok { color: var(--green); }
+.checker .panel + .panel { margin-top: 16px; }
+
 .foot { color: var(--dim); font-size: 13.5px; padding: 34px 20px 44px; border-top: 1px solid var(--line); margin-top: 40px; }
 .foot-links a { color: var(--muted); }
 
@@ -194,6 +243,8 @@ table.compare td .now { font-size: 22px; }
   .stat b { font-size: 18px; }
   .grid { grid-template-columns: 1fr; }
   .searchrow select { flex: 1 1 40%; }
+  .calc { padding: 14px; }
+  .calc-grid { grid-template-columns: 1fr; gap: 8px; }
   table.compare { display: block; overflow-x: auto; }
   .comparebar { bottom: 8px; }
 }

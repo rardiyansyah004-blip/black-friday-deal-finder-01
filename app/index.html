@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0d0f14">
-<meta name="description" content="Friday Proof — 23 real Black Friday 2026 deals, each price-checked on 27 Nov 2026 at its store, with an honest verdict on whether it is really a deal.">
+<meta name="description" content="Friday Proof — 32 real Black Friday 2026 deals, each price-checked on 27 Nov 2026 at its store, with a price-proof bar against the 90-day typical street price, an honest verdict, and a fake-markdown detector.">
 <title>Friday Proof — Black Friday Deal Finder</title>
 <link rel="stylesheet" href="style.css">
 <script type="module" src="main.js"></script>
@@ -16,6 +16,8 @@
     <nav class="topnav">
       <a href="#/">All deals</a>
       <a href="#/?verdict=new-low">New lows</a>
+      <a href="#/?verdict=skip">Fake markdowns</a>
+      <a href="#/check">Check your own deal</a>
       <a href="#/compare?a=airpods-pro-3&b=sony-xm5&c=beats-studio-pro">Compare top audio</a>
       <a href="#/how">How we check</a>
     </nav>
@@ -23,14 +25,16 @@
   <div class="hero wrap">
     <p class="kicker">BLACK FRIDAY 2026 &middot; PRICES CHECKED FRI 27 NOV 2026</p>
     <h1>Real Black Friday deals.<br>Checked today. Verdict included.</h1>
-    <p class="sub">Every deal below was found and price-checked by an agent on Black Friday itself — product, store, sale price, usual price, store link and the time it was checked. Then one honest call per deal: is it a <strong>new low</strong>, a <strong>strong deal</strong>, or just a <strong>routine sale</strong>?</p>
+    <p class="sub">Every deal below was found and price-checked by an agent on Black Friday itself — product, store, sale price, usual price, store link and the time it was checked. Then one honest call per deal: is it an <strong>all-time low</strong>, a <strong>strong deal</strong>, a <strong>routine sale</strong> — or a <strong>skip</strong>, where the "sale" price is just the ordinary price dressed up with an inflated "was"? Each card shows its price proof: the sale price plotted against the 90-day typical street price and the prior low.</p>
     <div class="stats" id="stats"></div>
   </div>
 </header>
-<main class="wrap" id="app"></main>
+<main class="wrap" id="app">
+  <noscript><p style="color:#a7adb9;padding:24px 0">Friday Proof needs JavaScript to render the deal grid — every deal, filter and the price checker runs in your browser, with nothing loaded over the network.</p></noscript>
+</main>
 <footer class="wrap foot">
-  <p><strong>Friday Proof</strong> — a Black Friday 2026 deal finder. All 23 deals were price-checked on 27 Nov 2026 from the stores' own Black Friday releases and named deal roundups; each card names its source. Prices move all day on Black Friday — always confirm the price at checkout before you buy. Store links open the store's own page for the product. This site loads nothing from the network: every deal, style and script ships in this site's own files.</p>
-  <p class="foot-links"><a href="#/how">How we check prices</a> &middot; <a href="#/">All 23 deals</a> &middot; Sale ends Cyber Monday, 30 Nov 2026.</p>
+  <p><strong>Friday Proof</strong> — a Black Friday 2026 deal finder. All 32 deals were price-checked on 27 Nov 2026 from the stores' own Black Friday releases and named deal roundups; each card names its source. Prices move all day on Black Friday — always confirm the price at checkout before you buy. Store links open the store's own page for the product. This site loads nothing from the network: every deal, style and script ships in this site's own files.</p>
+  <p class="foot-links"><a href="#/how">How we check prices</a> &middot; <a href="#/check">Check your own deal</a> &middot; <a href="#/">All 32 deals</a> &middot; Sale ends Cyber Monday, 30 Nov 2026.</p>
 </footer>
 </body>
 </html>

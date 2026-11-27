@@ -1,47 +1,54 @@
-// Friday Proof — app logic. Hash routes, so every view is a shareable link
+// Friday Proof — app logic, v2. Hash routes, so every view is a shareable link
 // and a screenshot can open any state directly:
 //
 //   #/                                  all deals
-//   #/?q=airpods&cat=Audio&store=Amazon&min=50&sort=discount&verdict=new-low&lows=1
+//   #/?q=airpods&cat=Audio&store=Amazon&min=10&sort=strength&verdict=new-low
 //   #/deal/<id>                         one deal
 //   #/compare?a=..&b=..&c=..            side-by-side comparison
+//   #/check?sale=149&was=249&usual=199  check your own deal
 //   #/how                               how we check prices
 //
 // window.__shotReady is false while a view renders and true once it is on
 // screen, so a screenshot script knows when to capture. All state lives in
 // the hash; nothing is fetched, nothing leaves the page. Typing in the search
 // box updates only the grid and the count line (never the toolbar itself),
-// so the input keeps focus while you type.
-import { CATEGORIES, CHECKED_LABEL, STORES, VERDICTS, deals, discountPct, money, saved } from "./data.js";
-import { card, compareTable, detail, howPage, missing } from "./views.js";
+// so the input keeps focus while you type. The checker re-renders only its
+// result area on input, for the same reason. The hero (intro + KPI strip)
+// shows only on the deal list — detail, compare, check and how pages get a
+// compact header so their content starts at the top of the viewport.
+import { CATEGORIES, CHECKED_LABEL, STORES, VERDICTS, VERDICT_RANK, belowTypicalPct, checkDeal, deals, money, realSaved } from "./data.js";
+import { card, checkerPage, checkerResult, compareTable, detail, howPage, missing } from "./views.js";
 
 const app = document.getElementById("app");
 const statsEl = document.getElementById("stats");
 
 function renderStats() {
-  const totalSaved = deals.reduce((s, d) => s + saved(d), 0);
+  const realTotal = deals.reduce((s, d) => s + realSaved(d), 0);
   const newLows = deals.filter((d) => d.verdict === "new-low").length;
-  const best = [...deals].sort((a, b) => discountPct(b) - discountPct(a))[0];
+  const skips = deals.filter((d) => d.verdict === "skip").length;
+  const best = [...deals].sort((a, b) => belowTypicalPct(b) - belowTypicalPct(a) || realSaved(b) - realSaved(a))[0];
   statsEl.innerHTML =
     `<div class="stat hot"><b>${deals.length}</b><span>deals checked today</span></div>` +
-    `<div class="stat"><b>${money(Math.round(totalSaved))}</b><span>total savings if you bought one of each*</span></div>` +
+    `<div class="stat"><b>${money(Math.round(realTotal))}</b><span>real savings vs typical street price*</span></div>` +
     `<div class="stat"><b>${newLows}</b><span>new all-time lows</span></div>` +
+    `<div class="stat"><b>${skips}</b><span>fake "was" markups flagged</span></div>` +
     `<div class="stat"><b>${STORES.length} stores</b><span>${STORES.join(" · ")}</span></div>` +
-    `<div class="stat"><b>−${discountPct(best)}%</b><span>biggest cut: ${best.title.slice(0, 34)}…</span></div>` +
-    `<div class="stat"><b>${CHECKED_LABEL}</b><span>every price checked</span></div>`;
+    `<div class="stat"><b>−${belowTypicalPct(best)}%</b><span>biggest real cut: ${best.title.slice(0, 34)}…</span></div>`;
 }
 
 function parseQuery(hash) {
   const q = hash.split("?")[1] || "";
   const p = new URLSearchParams(q);
+  let sort = p.get("sort") || "strength";
+  if (sort === "discount") sort = "below"; // v1 links used "discount" (vs was)
+  const verdict = p.get("verdict") || (p.get("lows") === "1" ? "new-low" : "");
   return {
     q: p.get("q") || "",
     cat: p.get("cat") || "",
     store: p.get("store") || "",
     min: Number(p.get("min") || 0),
-    sort: p.get("sort") || "discount",
-    verdict: p.get("verdict") || "",
-    lows: p.get("lows") === "1",
+    sort,
+    verdict,
   };
 }
 
@@ -51,9 +58,8 @@ function stateToHash(s) {
   if (s.cat) p.set("cat", s.cat);
   if (s.store) p.set("store", s.store);
   if (s.min) p.set("min", String(s.min));
-  if (s.sort !== "discount") p.set("sort", s.sort);
+  if (s.sort !== "strength") p.set("sort", s.sort);
   if (s.verdict) p.set("verdict", s.verdict);
-  if (s.lows) p.set("lows", "1");
   const qs = p.toString();
   return "#/" + (qs ? "?" + qs : "");
 }
@@ -66,11 +72,11 @@ function applyFilters(list, s) {
   }
   if (s.cat) out = out.filter((d) => d.category === s.cat);
   if (s.store) out = out.filter((d) => d.store === s.store);
-  if (s.min) out = out.filter((d) => discountPct(d) >= s.min);
+  if (s.min) out = out.filter((d) => belowTypicalPct(d) >= s.min);
   if (s.verdict) out = out.filter((d) => d.verdict === s.verdict);
-  if (s.lows) out = out.filter((d) => d.verdict === "new-low");
-  if (s.sort === "discount") out.sort((a, b) => discountPct(b) - discountPct(a));
-  else if (s.sort === "saved") out.sort((a, b) => saved(b) - saved(a));
+  if (s.sort === "strength") out.sort((a, b) => VERDICT_RANK[a.verdict] - VERDICT_RANK[b.verdict] || belowTypicalPct(b) - belowTypicalPct(a));
+  else if (s.sort === "below") out.sort((a, b) => belowTypicalPct(b) - belowTypicalPct(a));
+  else if (s.sort === "saved") out.sort((a, b) => realSaved(b) - realSaved(a));
   else if (s.sort === "price") out.sort((a, b) => a.price - b.price);
   else if (s.sort === "price-desc") out.sort((a, b) => b.price - a.price);
   return out;
@@ -99,9 +105,8 @@ function countLine(shown, s) {
   if (s.q) bits.push(`matching “${s.q}”`);
   if (s.cat) bits.push(s.cat);
   if (s.store) bits.push(s.store);
-  if (s.min) bits.push(`−${s.min}% or more`);
-  if (s.verdict) bits.push(VERDICTS[s.verdict].label.toLowerCase() + "s");
-  if (s.lows && s.verdict !== "new-low") bits.push("new lows");
+  if (s.min) bits.push(`−${s.min}% vs typical or more`);
+  if (s.verdict) bits.push(VERDICTS[s.verdict].plural);
   return `Showing <b>${shown.length} of ${deals.length} deals</b>${bits.length ? ` — ${bits.join(" · ")}` : ""}${shown.length !== deals.length ? ` <a class="clear" href="#/">Clear filters</a>` : ""}`;
 }
 
@@ -112,31 +117,42 @@ function gridHtml(shown) {
   return `<div class="grid">${shown.map((d) => card(d, compare.has(d.id))).join("")}</div>`;
 }
 
+function verdictCounts() {
+  const c = { "": deals.length, "new-low": 0, strong: 0, routine: 0, skip: 0 };
+  for (const d of deals) c[d.verdict]++;
+  return c;
+}
+
 function listView(s) {
   const shown = applyFilters(deals, s);
+  const c = verdictCounts();
+  const chip = (value, label) =>
+    `<button class="chip" data-verdict="${value}" aria-pressed="${s.verdict === value ? "true" : "false"}">${label} <span class="n">${c[value]}</span></button>`;
   const toolbar =
     `<div class="toolbar">
       <div class="searchrow">
         <input type="search" id="q" placeholder="Search deals — try “airpods”, “TV”, “Dyson”…" value="${s.q.replaceAll('"', "&quot;")}" aria-label="Search deals">
-        <select id="cat" aria-label="Category">${option("", "All categories", s.cat)}${CATEGORIES.map((c) => option(c, c, s.cat)).join("")}</select>
-        <select id="store" aria-label="Store">${option("", "All stores", s.store)}${STORES.map((c) => option(c, c, s.store)).join("")}</select>
-        <select id="min" aria-label="Minimum discount">${option("0", "Any discount", String(s.min))}${option("25", "25% off or more", String(s.min))}${option("40", "40% off or more", String(s.min))}${option("50", "50% off or more", String(s.min))}</select>
+        <select id="cat" aria-label="Category">${option("", "All categories", s.cat)}${CATEGORIES.map((cc) => option(cc, cc, s.cat)).join("")}</select>
+        <select id="store" aria-label="Store">${option("", "All stores", s.store)}${STORES.map((st) => option(st, st, s.store)).join("")}</select>
+        <select id="min" aria-label="Minimum cut vs typical price">${option("0", "Any real cut", String(s.min))}${option("10", "10% below typical or more", String(s.min))}${option("20", "20% below typical or more", String(s.min))}${option("30", "30% below typical or more", String(s.min))}</select>
         <select id="sort" aria-label="Sort by">
-          ${option("discount", "Biggest discount", s.sort)}
-          ${option("saved", "Biggest $ saved", s.sort)}
+          ${option("strength", "Verdict strength", s.sort)}
+          ${option("below", "% below typical", s.sort)}
+          ${option("saved", "Biggest real saving", s.sort)}
           ${option("price", "Lowest price", s.sort)}
           ${option("price-desc", "Highest price", s.sort)}
         </select>
       </div>
       <div class="chips" role="group" aria-label="Verdict filter">
-        <button class="chip" data-verdict="" aria-pressed="${s.verdict === "" && !s.lows ? "true" : "false"}">All verdicts</button>
-        <button class="chip" data-verdict="new-low" aria-pressed="${s.verdict === "new-low" ? "true" : "false"}">★ New lows only</button>
-        <button class="chip" data-verdict="strong" aria-pressed="${s.verdict === "strong" ? "true" : "false"}">Strong deals</button>
-        <button class="chip" data-verdict="routine" aria-pressed="${s.verdict === "routine" ? "true" : "false"}">Routine sales</button>
+        ${chip("", "All")}
+        ${chip("new-low", "★ All-Time Low")}
+        ${chip("strong", "Strong")}
+        ${chip("routine", "Routine")}
+        ${chip("skip", "Skip / Inflated")}
       </div>
       <div class="toggles">
-        <label><input type="checkbox" id="lows" ${s.lows ? "checked" : ""}> New lows only</label>
-        <span>Every deal shows its check time and source. <a href="#/how">How we check &rarr;</a></span>
+        <span>Every deal shows its price proof and source. <a href="#/how">How we check &rarr;</a></span>
+        <span>Got a deal we didn't list? <a href="#/check">Check your own deal &rarr;</a></span>
       </div>
     </div>
     <p class="countline" id="countline">${countLine(shown, s)}</p>`;
@@ -146,7 +162,7 @@ function listView(s) {
       ? `<div class="comparebar"><span>${compare.size} deal${compare.size > 1 ? "s" : ""} selected to compare</span><span class="spacer"></span><button id="cmp-clear" type="button">Clear</button><button id="cmp-go" class="primary" type="button" ${compare.size < 2 ? "disabled" : ""}>Compare ${compare.size < 2 ? "(pick 2+)" : ""}</button></div>`
       : "";
 
-  return toolbar + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<p class="countline" style="margin-top:18px">*Total savings counts one of each deal at its sale price vs its usual price. Streaming is priced per month.</p>`;
+  return toolbar + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<p class="countline" style="margin-top:18px">*Real savings count one of each deal at its sale price vs its 90-day typical street price — not the store's "was" price. Streaming is priced per month.</p>`;
 }
 
 // Re-render only the grid + count line, keeping the toolbar (and the search
@@ -172,7 +188,6 @@ function readStateFromDom() {
     min: Number(document.getElementById("min").value || 0),
     sort: document.getElementById("sort").value,
     verdict: document.querySelector('.chip[aria-pressed="true"]')?.dataset.verdict || "",
-    lows: document.getElementById("lows").checked,
   };
 }
 
@@ -189,13 +204,10 @@ function bindList() {
   for (const id of ["cat", "store", "min", "sort"]) {
     document.getElementById(id).addEventListener("change", () => go(readStateFromDom()));
   }
-  document.getElementById("lows").addEventListener("change", () => go(readStateFromDom()));
   document.querySelectorAll(".chip").forEach((chip) => {
     chip.addEventListener("click", () => {
       const next = readStateFromDom();
       next.verdict = chip.dataset.verdict;
-      if (chip.dataset.verdict === "new-low") next.lows = true;
-      else if (next.verdict === "") next.lows = false;
       go(next);
     });
   });
@@ -229,12 +241,48 @@ function bindCompareButtons() {
   });
 }
 
+function bindChecker() {
+  const saleEl = document.getElementById("ck-sale");
+  const wasEl = document.getElementById("ck-was");
+  const usualEl = document.getElementById("ck-usual");
+  if (!saleEl || !wasEl || !usualEl) return;
+  const update = () => {
+    const sale = parseFloat(saleEl.value);
+    const was = parseFloat(wasEl.value);
+    const usual = parseFloat(usualEl.value);
+    const p = new URLSearchParams();
+    if (saleEl.value) p.set("sale", saleEl.value);
+    if (wasEl.value) p.set("was", wasEl.value);
+    if (usualEl.value) p.set("usual", usualEl.value);
+    history.replaceState(null, "", "#/check" + (p.toString() ? "?" + p.toString() : ""));
+    const res = document.getElementById("ck-result");
+    if (res) res.innerHTML = checkerResult(checkDeal(sale, was, usual), sale, was, usual);
+  };
+  for (const el of [saleEl, wasEl, usualEl]) el.addEventListener("input", update);
+  const ex = document.getElementById("ck-example");
+  if (ex) {
+    ex.addEventListener("click", (e) => {
+      e.preventDefault();
+      saleEl.value = "149";
+      wasEl.value = "249";
+      usualEl.value = "199";
+      update();
+    });
+  }
+}
+
 function render() {
   window.__shotReady = false;
   const hash = location.hash || "#/";
   const dealMatch = hash.match(/^#\/deal\/([^/?]+)/);
   const compareMatch = hash.startsWith("#/compare");
   const howMatch = hash.startsWith("#/how");
+  const checkMatch = hash.startsWith("#/check");
+  const isList = !dealMatch && !compareMatch && !howMatch && !checkMatch;
+  // Compact header on sub-pages: the hero (intro + KPI strip) belongs to the
+  // deal list; hiding it on detail/compare/check/how keeps their content at
+  // the top of the viewport (and inside the screenshot frame).
+  document.body.classList.toggle("compact", !isList);
 
   if (dealMatch) {
     const found = deals.find((d) => d.id === decodeURIComponent(dealMatch[1]));
@@ -247,6 +295,12 @@ function render() {
     const list = ids.map((id) => deals.find((d) => d.id === id)).filter(Boolean);
     document.title = "Compare deals | Friday Proof";
     app.innerHTML = list.length >= 2 ? compareTable(list) : `<div class="empty"><b>Pick at least two deals to compare.</b><a href="#/">Back to all deals &rarr;</a></div>`;
+  } else if (checkMatch) {
+    const p = new URLSearchParams(hash.split("?")[1] || "");
+    const vals = { sale: p.get("sale") || "", was: p.get("was") || "", usual: p.get("usual") || "" };
+    document.title = "Check your own deal | Friday Proof";
+    app.innerHTML = checkerPage(vals);
+    bindChecker();
   } else if (howMatch) {
     document.title = "How we check prices | Friday Proof";
     app.innerHTML = howPage();

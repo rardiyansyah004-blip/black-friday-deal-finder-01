@@ -1,14 +1,16 @@
 // Friday Proof — a Black Friday deal finder for black-friday-deal-finder-01.
 // Node 22, standard library only. The site is this directory's app/ folder:
-// plain static files (index.html + ES modules + CSS, no build step), its 23
+// plain static files (index.html + ES modules + CSS, no build step), its 32
 // deals held in app/data.js, nothing loaded over the network, each deal
-// linking out to its store. This program hands it in: it copies app/ and
-// screenshots/ from beside this file to /output and writes
-// /output/dossier.json with buildDossier from vendor/makefun-frontend.ts —
-// the summary the judge reads (screenshots, first-load files and bytes, and
-// the source outline). Leave vendor/makefun-frontend.ts exactly as the kit
-// shipped it: the scorer rebuilds the dossier with its own copy and compares
-// the two byte for byte.
+// linking out to its store. v2 (round 2 resubmit) adds the price-proof bar
+// on every card, a fourth verdict (skip — inflated was), a fake-markdown
+// filter, and a static "Check your own deal" calculator at #/check. This
+// program hands it in: it copies app/ and screenshots/ from beside this
+// file to /output and writes /output/dossier.json with buildDossier from
+// vendor/makefun-frontend.ts — the summary the judge reads (screenshots,
+// first-load files and bytes, and the source outline). Leave
+// vendor/makefun-frontend.ts exactly as the kit shipped it: the scorer
+// rebuilds the dossier with its own copy and compares the two byte for byte.
 //
 // Run it locally with `python3 -m http.server 8000 --directory app`
 // (serves app/ on http://localhost:8000), or hand it in outside the grader
