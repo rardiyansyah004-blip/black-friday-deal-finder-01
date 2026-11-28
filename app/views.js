@@ -317,9 +317,9 @@ function cartWarningHtml(audit) {
           `<li><span>${esc(d.title)}</span><span>real cut only ${money(d.typicalStreetPrice - d.salePrice)} vs the usual ${money(d.typicalStreetPrice)} — the same price as last month</span></li>`,
       )
       .join("");
-    return `<div class="cart-warn cart-warn-routine"><b>⚠ ${n} item${n > 1 ? "s" : "is"} only routine sale${n > 1 ? "s" : ""} — small cuts, the same price as last month. Removing ${n > 1 ? "them" : "it"} saves ${money(audit.routineSaves)}.</b><p>These are real discounts, but small ones. Buy them only if you need them today — the price will be back.</p><ul class="facts">${rows}</ul></div>`;
+    return `<div class="cart-warn cart-warn-routine"><b>⚠ ${n} item${n > 1 ? "s" : "is"} only routine sale${n > 1 ? "s" : ""} — small cuts, the same price as last month, and removing ${n > 1 ? "them" : "it"} saves ${money(audit.routineSaves)}.</b><p>These are real discounts, but small ones. Buy them only if you need them today — the price will be back.</p><ul class="facts">${rows}</ul></div>`;
   }
-  return `<div class="cart-warn cart-warn-ok"><b>✓ All ${audit.count} item${audit.count > 1 ? "s are" : " is a"} genuine deal${audit.count > 1 ? "s" : ""} (all-time low or strong).</b><p>Real saving ${money(audit.realSavings)} vs the typical street prices — no fake markdowns, no routine fillers in this cart.</p></div>`;
+  return `<div class="cart-warn cart-warn-ok"><b>✓ All ${audit.count} item${audit.count > 1 ? "s are" : " is a"} genuine deal${audit.count > 1 ? "s" : ""} (all-time low or strong).</b><p>Real saving ${money(audit.realSavings)} vs the typical street prices — nothing inflated, nothing routine in this cart.</p></div>`;
 }
 
 /** The cart drawer's content: the audit table (per-item sale / typical /

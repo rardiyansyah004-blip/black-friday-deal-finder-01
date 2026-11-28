@@ -401,9 +401,10 @@ function listView(s) {
 
   // v3: which drawer opens on load. A ?proof=<id> deep link wins; otherwise
   // the pristine main view (no search, filter or sort) opens the featured
-  // AirPods 4 drawer by default.
+  // AirPods 4 drawer by default — except when the cart drawer opens on
+  // load (?cartview=1), so the two drawers never stack.
   const pristine = !s.q && !s.cat && !s.store && !s.min && !s.verdict && s.sort === "strength";
-  const openId = s.proof || (pristine ? "airpods-4" : "");
+  const openId = s.proof || (pristine && !s.cartview ? "airpods-4" : "");
   const openDeal = openId ? deals.find((d) => d.id === openId) || null : null;
   // v4: the cart drawer opens on load only for the ?cartview=1 deep link
   // (screenshot #3) — never by default, so the cover stays clean.
