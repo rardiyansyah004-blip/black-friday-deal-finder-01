@@ -305,3 +305,94 @@ table.compare td .now { font-size: 22px; }
   .matrix { font-size: 13.5px; }
   .matrix th, .matrix td { padding: 8px; }
 }
+
+/* --- v4: Timing Verdict badges -------------------------------------------- */
+/* One badge per card (after the verdict box), in the drawer and on the
+ * detail page. The badge names the call; the span underneath prints the
+ * rule that produced it, so the call is checkable, not asserted. */
+.timing { border-radius: 10px; padding: 10px 12px; font-size: 14px; line-height: 1.45; }
+.timing b { display: block; font-size: 12.5px; letter-spacing: .1em; margin-bottom: 2px; }
+.timing span { color: var(--muted); }
+.timing-buy { background: var(--green-bg); border: 1px solid #1d5c36; }
+.timing-buy b { color: var(--green); }
+.timing-hold { background: var(--grey-bg); border: 1px solid #3a3f4b; }
+.timing-hold b { color: var(--amber); }
+.timing-skip { background: var(--red-bg); border: 1px solid #6b1d20; }
+.timing-skip b { color: var(--red); }
+.detail .timing { margin-top: 14px; }
+
+/* --- v4: Category Fake-Markdown Radar -------------------------------------- */
+/* A compact panel above the grid: four groups in a row on desktop, two
+ * columns on phones. Each group shows its two pure-SVG bars (was-markup
+ * red, real saving green, 0–100% scale with a faint track) and a one-line
+ * takeaway computed from its rates. */
+.radar { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 16px 12px; margin: 14px 0 0; }
+.radar-head h2 { margin: 0 0 4px; font-size: 18px; }
+.radar-head p { color: var(--muted); font-size: 13.5px; margin: 0 0 12px; line-height: 1.5; max-width: 900px; }
+.radar-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.radar-group { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px 12px 10px; }
+.radar-name { font-weight: 800; font-size: 14.5px; margin-bottom: 2px; }
+.radar-name span { display: block; font-weight: 600; color: var(--muted); font-size: 12.5px; }
+.radar-svg { width: 100%; height: auto; display: block; margin-top: 6px; }
+.radar-svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+.radar-svg-label { font-size: 11px; font-weight: 700; }
+.radar-svg-val { font-size: 12px; font-weight: 800; }
+.radar-track { fill: #262b36; }
+.radar-take { color: var(--muted); font-size: 13px; margin: 8px 0 0; line-height: 1.45; }
+.radar-small { color: var(--muted); font-size: 13.5px; margin: 8px 0 0; line-height: 1.5; }
+.radar-foot { color: var(--dim); font-size: 12.5px; margin: 12px 2px 0; }
+
+/* --- v4: Cart Reality Audit ------------------------------------------------ */
+/* The sticky cart bar mirrors the compare bar (amber, bottom of the
+ * viewport). When the compare bar is also showing, the cart bar lifts
+ * above it instead of overlapping. The cart drawer reuses the modal
+ * overlay; its panel is wider, for the audit table. */
+.cartbar {
+  position: sticky; bottom: 14px; z-index: 6; margin-top: 18px;
+  background: var(--panel2); color: var(--ink); border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+.cartbar .spacer { flex: 1; }
+.cartbar button { font: inherit; font-weight: 800; border: 2px solid var(--line); background: transparent; color: var(--ink); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+.cartbar button.primary { background: var(--amber); border-color: var(--amber); color: var(--amber-ink); }
+.cartbar-lifted { bottom: 76px; }
+.cart-warn-chip { background: var(--red-bg); color: var(--red); font-weight: 800; font-size: 12.5px; border: 1px solid #6b1d20; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.cart-warn-routine { background: var(--grey-bg); color: var(--amber); border-color: #4a3a10; }
+.cart-ok-chip { background: var(--green-bg); color: var(--green); font-weight: 800; font-size: 12.5px; border: 1px solid #1d5c36; border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+.cart-drawer { max-width: 780px; }
+.cart-table { margin-top: 14px; }
+.cart-table tr.cart-total td { background: rgba(255, 176, 32, .06); }
+.cart-warn { border-radius: 10px; padding: 12px 14px; font-size: 14px; line-height: 1.5; margin-top: 14px; }
+.cart-warn b { display: block; margin-bottom: 4px; }
+.cart-warn p { color: var(--muted); margin: 4px 0 8px; }
+.cart-warn-skip { background: var(--red-bg); border: 1px solid #6b1d20; }
+.cart-warn-skip b { color: var(--red); }
+.cart-warn-routine { background: var(--grey-bg); border: 1px solid #4a3a10; }
+.cart-warn-routine b { color: var(--amber); }
+.cart-warn-ok { background: var(--green-bg); border: 1px solid #1d5c36; }
+.cart-warn-ok b { color: var(--green); }
+.cart-remove { padding: 6px 10px; font-size: 13px; }
+.cart-btn[aria-pressed="true"] { background: var(--green-bg); border-color: #1d5c36; color: var(--green); }
+.cart-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* The card actions row gains a third button in v4 (cart), so it wraps on
+ * narrow cards instead of squeezing the three buttons. */
+.card-actions { flex-wrap: wrap; }
+
+/* --- v4: Cashback Stacker (inside the checker) ------------------------------ */
+.stack-toggle { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-top: 14px; cursor: pointer; }
+.stack-toggle input { accent-color: var(--amber); width: 17px; height: 17px; }
+.ck-stack { color: var(--green); font-weight: 700; font-size: 14px; margin: 10px 0 0; line-height: 1.5; }
+.ck-stack b { color: var(--ink); }
+
+@media (max-width: 900px) {
+  .radar-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 760px) {
+  .cartbar { bottom: 8px; }
+  .cartbar-lifted { bottom: 70px; }
+  .cart-drawer { padding: 16px; }
+  .cart-table { font-size: 13px; }
+  .cart-table th, .cart-table td { padding: 8px; }
+}

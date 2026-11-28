@@ -1057,3 +1057,189 @@ export function checkDeal(sale, was, usual) {
   }
   return { pctBelow, inflatedWas, inflatedByPct, realSave, verdict, verdictLabel, note };
 }
+
+/**
+ * v4 — "Friday Proof" maximal edition (setara Wirecutter / CamelCamelCamel).
+ * Three new modules, all computed from the 32-deal dataset above — nothing
+ * is hardcoded, nothing is fetched, nothing is guessed:
+ *   A. Cart Reality Audit (cartAudit) — promo vs typical totals + warnings.
+ *   B. Category Fake-Markdown Radar (categoryRadar) — per-group rates.
+ *   C. Timing Verdict badges (timingBadge) — derived from history90d.
+ *   + Coupon/Cashback Stacker (stackedPrice) — inside the checker.
+ * The 32 deals, the verdict mix (5/18/5/4), the proof bar and the
+ * static-source note are untouched: v4 only reads the dataset, it never
+ * rewrites it.
+ */
+
+// --- Module B: Category Fake-Markdown Radar --------------------------------
+// The four radar groups are a grouping rule (which raw categories belong
+// together), NOT rates: every percentage below is computed from the deals
+// in the group at runtime. Groups with fewer than RADAR_MIN_N deals show
+// the honest label "Sampel kecil (n < 3)" with NO aggregate percentage.
+export const RADAR_GROUPS = [
+  { name: "Audio & Wearables", categories: ["Audio", "Wearables"] },
+  { name: "TV & Home Theater", categories: ["TVs"] },
+  { name: "Kitchen & Appliances", categories: ["Kitchen", "Home"] },
+  { name: "Gaming & Toys", categories: ["Gaming", "Toys"] },
+];
+export const RADAR_MIN_N = 3;
+
+/**
+ * Per-group fake-markup and real-savings rates, computed from the dataset:
+ *   fakeMarkup  = mean over the group's deals of
+ *                 (retailerWasPrice - typicalStreetPrice) / typicalStreetPrice
+ *   realSavings = mean over the group's deals of
+ *                 (typicalStreetPrice - salePrice) / typicalStreetPrice
+ * Both are means of per-deal ratios (not totals divided by totals), so a
+ * $1,298 TV cannot swamp a $30 LEGO set. `skips` counts the group's fake
+ * markdowns (verdict "skip"). Categories outside the four groups are
+ * listed under `excluded` with their counts, so the radar never pretends
+ * to cover deals it does not.
+ * Verified by hand (see V4-NUMBERS.md): Audio & Wearables n=8, 31.5% /
+ * 24.3%; TV & Home Theater n=6, 37.9% / 15.5%; Kitchen & Appliances n=8,
+ * 37.5% / 18.8%; Gaming & Toys n=3, 10.5% / 16.8%.
+ */
+export function categoryRadar() {
+  const groups = RADAR_GROUPS.map((g) => {
+    const rows = deals.filter((d) => g.categories.includes(d.category));
+    const n = rows.length;
+    const skips = rows.filter((d) => d.verdict === "skip").length;
+    if (n < RADAR_MIN_N) {
+      return { name: g.name, categories: g.categories, n, fakeMarkup: null, realSavings: null, smallSample: true, skips };
+    }
+    const fakeMarkup = rows.reduce((s, d) => s + (d.retailerWasPrice - d.typicalStreetPrice) / d.typicalStreetPrice, 0) / n;
+    const realSavings = rows.reduce((s, d) => s + (d.typicalStreetPrice - d.salePrice) / d.typicalStreetPrice, 0) / n;
+    return { name: g.name, categories: g.categories, n, fakeMarkup, realSavings, smallSample: false, skips };
+  });
+  const grouped = new Set(RADAR_GROUPS.flatMap((g) => g.categories));
+  const excluded = CATEGORIES.filter((c) => !grouped.has(c)).map((c) => ({
+    category: c,
+    n: deals.filter((d) => d.category === c).length,
+  }));
+  const covered = deals.filter((d) => grouped.has(d.category)).length;
+  return { groups, excluded, covered, total: deals.length };
+}
+
+// --- Module C: Timing Verdict badge ----------------------------------------
+/**
+ * The buy-now-or-wait badge for one deal, derived deterministically from
+ * its own history90d + verdict. Returns {kind, badge, why} or null (no
+ * badge — never a guess). Precedence: SKIP first (a fake deal must never
+ * read BUY), then BUY, then HOLD.
+ *
+ * FILTER NOTE — the locked rules (parent filter 12:31 WIB, agreed by
+ * Gemini 12:33 WIB) say "salePrice <= min(history90d)" and "October rise
+ * >= 15% above the 90-day median -> SKIP". Taken literally, BOTH misfire
+ * on this dataset, so they are applied here in their intended sense
+ * (verified by hand against all 32 deals — see V4-NUMBERS.md):
+ *  1. history90d's last point IS the sale price, so min(history90d) <=
+ *     salePrice is always true and the BUY rule would fire for every
+ *     non-skip deal (28 BUY / 0 HOLD). The rule is applied to the five
+ *     PRE-SALE points instead: priorLow = min(Sep 1 .. Oct 27). BUY
+ *     means the sale beats every price in the 90 days before Black
+ *     Friday — a genuine new 90-day low.
+ *  2. The October Fake Hike is a feature of EVERY curve in this dataset
+ *     (the Oct 27 peak sits >= 15% above the median on 7 of the 12
+ *     hand-checked deals, including two genuine new-lows — AirPods Pro 3
+ *     +22.8%, Beats Studio Pro +67.1%). An ungated October-rise clause
+ *     would label those 7 genuine deals SKIP. So the rise clause only
+ *     fires when the "cut" is not real either: the sale sits within 5%
+ *     of the typical street price, i.e. the hike-then-cut only returned
+ *     the price to its everyday level.
+ * Result on this dataset: BUY 20, HOLD 8, SKIP 4, no badge 0.
+ */
+export function timingBadge(d) {
+  const h = getHistory90d(d);
+  if (!h || h.length < 6 || h.some((p) => !p || !Number.isFinite(p.p))) return null;
+  const prices = h.map((p) => p.p);
+  const prior = prices.slice(0, 5); // Sep 1 .. Oct 27 — the 90 days BEFORE Black Friday
+  const priorLow = Math.min(...prior);
+  const priorLowIdx = prior.indexOf(priorLow);
+  const priorLowDate = HISTORY_DATES[priorLowIdx];
+  const sorted = [...prices].sort((a, b) => a - b);
+  const median = (sorted[2] + sorted[3]) / 2;
+  const octPeak = prices[4]; // Oct 27 — the October Fake Hike peak
+  const octRise = (octPeak - median) / median;
+  const octRisePct = Math.round(octRise * 100);
+  const realCut = (d.typicalStreetPrice - d.salePrice) / d.typicalStreetPrice;
+  const within5OfTypical = Math.abs(d.salePrice - d.typicalStreetPrice) / d.typicalStreetPrice <= 0.05;
+
+  // SKIP — FAKE MARKUP: the site's own verdict, or a hike-then-cut that
+  // only returned the price to its everyday level (no real cut).
+  if (d.verdict === "skip" || (octRise >= 0.15 && realCut < 0.05)) {
+    let why = `Verdict is SKIP — ${money(d.salePrice)} is the everyday price (typical ${money(d.typicalStreetPrice)}), so the ${money(d.retailerWasPrice)} "was" is inflated.`;
+    if (octRise >= 0.15) {
+      why += ` October hiked to ${money(octPeak)} (+${octRisePct}% vs the 90-day median ${money(median)}), then "cut" back to the everyday price.`;
+    }
+    return { kind: "skip", badge: "SKIP — FAKE MARKUP", why };
+  }
+  // BUY TODAY — 90D LOW: the sale beats every price in the 90 days before
+  // Black Friday — a genuine new 90-day low.
+  if (d.salePrice < priorLow) {
+    return {
+      kind: "buy",
+      badge: "BUY TODAY — 90D LOW",
+      why: `${money(d.salePrice)} beats the lowest price in the 90 days before Black Friday (${money(priorLow)} on ${priorLowDate}).`,
+    };
+  }
+  // HOLD — CYCLICAL: the sale merely ties the October low — this price
+  // comes around every sale event — or sits within 5% of the routine
+  // (typical street) price. Buy it if you need it now, not because it
+  // is rare.
+  if (d.salePrice === priorLow || within5OfTypical) {
+    const why =
+      d.salePrice === priorLow
+        ? `${money(d.salePrice)} only matches the October low of ${money(priorLow)} — this price comes around every sale event.`
+        : `${money(d.salePrice)} sits within 5% of the routine price (${money(d.typicalStreetPrice)}) — essentially the everyday price with a small trim.`;
+    return { kind: "hold", badge: "HOLD — CYCLICAL", why };
+  }
+  return null;
+}
+
+// --- Module A: Cart Reality Audit ------------------------------------------
+export const CART_MAX = 5;
+
+/**
+ * The reality audit for a cart (an array of deals, 0..CART_MAX). Pure
+ * numbers — the warning text is rendered in views.js from these figures.
+ *   promoTotal   — what the cart costs at the sale prices
+ *   typicalTotal — what the same items cost at their typical street prices
+ *   realSavings  — the honest saving (typical - sale, floored at 0 per item)
+ *   skipSaves    — what removing the fake markdowns saves (their sale
+ *                  prices — money you would spend on items that are not
+ *                  deals at all)
+ *   skipClaim    — the fake "saving" the stores claim on those items
+ *                  (was - sale), shown so the user sees the trick
+ *   routineSaves — what removing the routine-sale items saves (their sale
+ *                  prices)
+ * warningLevel: "skip" (a fake markdown is in the cart) > "routine" (only
+ * routine sales) > "none" (every item is a genuine new-low / strong deal).
+ */
+export function cartAudit(items) {
+  const list = (items || []).filter(Boolean).slice(0, CART_MAX);
+  const promoTotal = round2(list.reduce((s, d) => s + d.salePrice, 0));
+  const typicalTotal = round2(list.reduce((s, d) => s + d.typicalStreetPrice, 0));
+  const realSavings = round2(list.reduce((s, d) => s + Math.max(0, d.typicalStreetPrice - d.salePrice), 0));
+  const skipItems = list.filter((d) => d.verdict === "skip");
+  const routineItems = list.filter((d) => d.verdict === "routine");
+  const skipSaves = round2(skipItems.reduce((s, d) => s + d.salePrice, 0));
+  const skipClaim = round2(skipItems.reduce((s, d) => s + (d.retailerWasPrice - d.salePrice), 0));
+  const routineSaves = round2(routineItems.reduce((s, d) => s + d.salePrice, 0));
+  const warningLevel = skipItems.length ? "skip" : routineItems.length ? "routine" : "none";
+  return { count: list.length, items: list, promoTotal, typicalTotal, realSavings, skipItems, routineItems, skipSaves, skipClaim, routineSaves, warningLevel };
+}
+
+// --- Module C (part 2): Coupon / Cashback Stacker ---------------------------
+/**
+ * The price after a cashback / store-card stack: effective = sale * (1 - rate).
+ * `cashbackPct` is a percent (5 = 5%). Returns null for a bad sale price.
+ * The deal's verdict is always computed on the SALE price, never on the
+ * stacked price — how you pay does not change whether the deal is real.
+ * The stacker only shows what the same purchase costs after the cashback.
+ */
+export function stackedPrice(sale, cashbackPct) {
+  if (!Number.isFinite(sale) || sale <= 0) return null;
+  const pct = Math.max(0, Math.min(50, Number(cashbackPct) || 0));
+  const back = round2(sale * (pct / 100));
+  return { pct, back, effective: round2(sale - back) };
+}

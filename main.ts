@@ -13,13 +13,30 @@
 // AirPods 4. The drawer is deep-linkable too: #/?proof=<deal-id> opens it
 // for that deal. Nothing else changes: same 32 deals, same verdict mix
 // (5 new-low / 18 strong / 5 routine / 4 skip), same KPI strip, same
-// proof bar, same filters and sorts, same calculator. This program hands
-// it in: it copies app/ and screenshots/ from beside this file to /output
-// and writes /output/dossier.json with buildDossier from
-// vendor/makefun-frontend.ts — the summary the judge reads (screenshots,
-// first-load files and bytes, and the source outline). Leave
-// vendor/makefun-frontend.ts exactly as the kit shipped it: the scorer
-// rebuilds the dossier with its own copy and compares the two byte for byte.
+// proof bar, same filters and sorts, same calculator.
+// v4 (round 3 resubmit, maximal edition) adds three modules on top of v3,
+// all computed from the same 32 deals — nothing hardcoded, nothing fetched:
+//   A. Cart Reality Audit — "+ Cart" on every card (max 5), a sticky cart
+//      bar with promo vs typical totals, and a cart drawer that warns
+//      about fake markdowns (SKIP) and routine sales with the exact dollars
+//      removing them saves. Deep link: #/?cart=<id1,id2>&cartview=1.
+//   B. Category Fake-Markdown Radar — a panel above the grid with one
+//      pure-SVG bar pair per group (was-markup vs real saving, computed
+//      from the deals; groups under 3 deals show no percentage).
+//   C. Timing Verdict badges — BUY TODAY — 90D LOW / HOLD — CYCLICAL /
+//      SKIP — FAKE MARKUP on every card, in the drawer and on the detail
+//      page, derived from each deal's own history90d + verdict — plus a
+//      5% cashback stacker inside the "Check your own deal" calculator
+//      (#/check?sale=..&was=..&usual=..&stack=1).
+// Still nothing else changes: same 32 deals, same verdict mix, same KPI
+// strip ($1,857 real savings, 4 fake "was"), same proof bar, same filters
+// and sorts, same static-source note. This program hands it in: it copies
+// app/ and screenshots/ from beside this file to /output and writes
+// /output/dossier.json with buildDossier from vendor/makefun-frontend.ts —
+// the summary the judge reads (screenshots, first-load files and bytes,
+// and the source outline). Leave vendor/makefun-frontend.ts exactly as the
+// kit shipped it: the scorer rebuilds the dossier with its own copy and
+// compares the two byte for byte.
 //
 // Run it locally with `python3 -m http.server 8000 --directory app`
 // (serves app/ on http://localhost:8000), or hand it in outside the grader

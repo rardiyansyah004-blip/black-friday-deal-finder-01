@@ -31,8 +31,18 @@
 // backdrop all close it. Focus moves into the drawer when it opens and
 // back to the card's button when it closes, so keyboard users never lose
 // their place.
-import { CATEGORIES, CHECKED_LABEL, STORES, VERDICTS, VERDICT_RANK, belowTypicalPct, checkDeal, deals, money, realSaved } from "./data.js";
-import { card, checkerPage, checkerResult, compareTable, detail, howPage, missing, proofDrawer } from "./views.js";
+//
+// v4 — three new modules, all state in the hash (shareable links):
+//   A. Cart Reality Audit. "?cart=<id1,id2>" (max 5) holds the cart; the
+//      "+ Cart" toggle on every card and detail page adds/removes a deal
+//      without a re-render (updateCartUI refreshes only the cart bar, the
+//      cart drawer and the buttons, so scroll and search focus survive).
+//      "?cartview=1" opens the cart drawer on load (screenshot #3).
+//   B. Category Fake-Markdown Radar (radarPanel) renders above the grid.
+//   C. Timing badges render on every card (views.js). The checker gains
+//      a 5% cashback stacker ("?stack=1" pre-enables it).
+import { CATEGORIES, CHECKED_LABEL, STORES, VERDICTS, VERDICT_RANK, belowTypicalPct, cartAudit, checkDeal, deals, money, realSaved, CART_MAX } from "./data.js";
+import { card, cartBarHtml, cartDrawerHtml, checkerPage, checkerResult, compareTable, detail, howPage, missing, proofDrawer, radarPanel } from "./views.js";
 
 const app = document.getElementById("app");
 const statsEl = document.getElementById("stats");
@@ -51,12 +61,31 @@ function renderStats() {
     `<div class="stat"><b>−${belowTypicalPct(best)}%</b><span>biggest real cut: ${best.title.slice(0, 34)}…</span></div>`;
 }
 
+// --- v4: the cart lives in the hash -----------------------------------------
+// The hash is the source of truth: render() rebuilds the Set from it on
+// every hashchange, and toggles update it via replaceState (no re-render).
+let cart = new Set();
+let cartOpen = false;
+const dealById = (id) => deals.find((d) => d.id === id);
+function cartDeals() {
+  return [...cart].map(dealById).filter(Boolean);
+}
+function cartAuditNow() {
+  return cartAudit(cartDeals());
+}
+
 function parseQuery(hash) {
   const q = hash.split("?")[1] || "";
   const p = new URLSearchParams(q);
   let sort = p.get("sort") || "strength";
   if (sort === "discount") sort = "below"; // v1 links used "discount" (vs was)
   const verdict = p.get("verdict") || (p.get("lows") === "1" ? "new-low" : "");
+  // v4: ?cart=<id1,id2> — only real deal ids, deduped, max CART_MAX.
+  const cartIds = (p.get("cart") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter((id) => id && dealById(id));
+  const cartSet = new Set(cartIds.slice(0, CART_MAX));
   return {
     q: p.get("q") || "",
     cat: p.get("cat") || "",
@@ -65,6 +94,9 @@ function parseQuery(hash) {
     sort,
     verdict,
     proof: p.get("proof") || "",
+    cart: cartSet,
+    cartview: p.get("cartview") === "1",
+    stack: p.get("stack") === "1",
   };
 }
 
@@ -77,8 +109,26 @@ function stateToHash(s) {
   if (s.sort !== "strength") p.set("sort", s.sort);
   if (s.verdict) p.set("verdict", s.verdict);
   if (s.proof) p.set("proof", s.proof);
+  if (s.cart && s.cart.size) p.set("cart", [...s.cart].join(","));
+  if (s.cartview) p.set("cartview", "1");
+  if (s.stack) p.set("stack", "1");
   const qs = p.toString();
   return "#/" + (qs ? "?" + qs : "");
+}
+
+// Rewrite only the cart/cartview params of the current hash, keeping every
+// other param (search, filters, proof) intact. Used by cart toggles, which
+// must not re-render the view.
+function syncCartHash() {
+  const hash = location.hash || "#/";
+  const [base, query] = hash.split("?");
+  const p = new URLSearchParams(query || "");
+  if (cart.size) p.set("cart", [...cart].join(","));
+  else p.delete("cart");
+  if (cartOpen) p.set("cartview", "1");
+  else p.delete("cartview");
+  const qs = p.toString();
+  history.replaceState(null, "", base + (qs ? "?" + qs : ""));
 }
 
 function applyFilters(list, s) {
@@ -131,7 +181,7 @@ function gridHtml(shown) {
   if (shown.length === 0) {
     return `<div class="empty"><b>No deals match that.</b>Try a different search, or clear the filters — all ${deals.length} deals are still here.<br><a href="#/">Show all deals &rarr;</a></div>`;
   }
-  return `<div class="grid">${shown.map((d) => card(d, compare.has(d.id))).join("")}</div>`;
+  return `<div class="grid">${shown.map((d) => card(d, compare.has(d.id), cart.has(d.id), cart.size >= CART_MAX)).join("")}</div>`;
 }
 
 function verdictCounts() {
@@ -166,6 +216,7 @@ function openDrawer(id) {
   const overlay = document.getElementById("drawer-overlay");
   const panel = document.getElementById("drawer-panel");
   if (!d || !overlay || !panel) return false;
+  closeCart();
   panel.innerHTML = proofDrawer(d);
   overlay.classList.add("open");
   document.querySelectorAll("[data-proof]").forEach((b) => b.setAttribute("aria-expanded", b.dataset.proof === id ? "true" : "false"));
@@ -191,11 +242,75 @@ function closeDrawer() {
   return true;
 }
 
+// --- v4 cart drawer ----------------------------------------------------------
+// A second modal shell per view, for the Cart Reality Audit. openCart fills
+// it with cartDrawerHtml(audit) and records ?cartview=1 in the hash;
+// closeCart hides it and drops the param. Opening one drawer closes the
+// other, so the two modals never stack. Like the proof drawer, the cart
+// drawer is driven by replaceState — no re-render, no scroll jump.
+function cartShell(open, audit) {
+  const inner = open ? cartDrawerHtml(audit) : "";
+  return `<div class="drawer-overlay cart-overlay${open ? " open" : ""}" id="cart-overlay"><div class="drawer cart-drawer" role="dialog" aria-modal="true" aria-label="Cart reality audit" id="cart-panel">${inner}</div></div>`;
+}
+
+function openCart() {
+  const overlay = document.getElementById("cart-overlay");
+  const panel = document.getElementById("cart-panel");
+  if (!overlay || !panel) return false;
+  closeDrawer();
+  panel.innerHTML = cartDrawerHtml(cartAuditNow());
+  overlay.classList.add("open");
+  cartOpen = true;
+  syncCartHash();
+  const closer = panel.querySelector("[data-cart-close]");
+  if (closer) closer.focus({ preventScroll: true });
+  return true;
+}
+
+function closeCart() {
+  const overlay = document.getElementById("cart-overlay");
+  if (!overlay || !overlay.classList.contains("open")) return false;
+  overlay.classList.remove("open");
+  cartOpen = false;
+  syncCartHash();
+  document.getElementById("cart-open")?.focus({ preventScroll: true });
+  return true;
+}
+
+// Refresh only the cart UI after a toggle: the sticky cart bar, the cart
+// drawer content (when open), every "+ Cart" button's label/state, and the
+// nav cart count. The grid, the search box and the scroll position are
+// untouched, so adding a deal never yanks the page.
+function updateCartUI() {
+  const audit = cartAuditNow();
+  const bar = document.getElementById("cartbar-wrap");
+  if (bar) bar.innerHTML = cartBarHtml(audit, compare.size > 0);
+  const panel = document.getElementById("cart-panel");
+  if (panel && cartOpen) panel.innerHTML = cartDrawerHtml(audit);
+  document.querySelectorAll("[data-cart]").forEach((b) => {
+    const inCart = cart.has(b.dataset.cart);
+    b.setAttribute("aria-pressed", inCart ? "true" : "false");
+    b.textContent = inCart ? "✓ In cart" : "+ Cart";
+    b.disabled = !inCart && cart.size >= CART_MAX;
+  });
+  const navN = document.getElementById("nav-cart-n");
+  if (navN) navN.textContent = cart.size ? ` (${cart.size})` : "";
+  syncCartHash();
+}
+
+function toggleCart(id) {
+  if (!dealById(id)) return;
+  if (cart.has(id)) cart.delete(id);
+  else if (cart.size < CART_MAX) cart.add(id);
+  updateCartUI();
+}
+
 // Delegated clicks, bound once: the grid re-renders on every keystroke, so
-// per-button listeners would not survive. The overlay is inside #app, so
-// backdrop clicks (target === overlay) and the ✕ button are handled here
-// too, alongside the [data-proof] open buttons and the [data-cmp] compare
-// toggles (compare still re-renders the view, so it stays in render()).
+// per-button listeners would not survive. The overlays are inside #app, so
+// backdrop clicks (target === overlay) and the ✕ buttons are handled here
+// too, alongside the [data-proof] open buttons, the [data-cart] toggles,
+// the [data-cart-remove] buttons, and the [data-cmp] compare toggles
+// (compare still re-renders the view, so it stays in render()).
 app.addEventListener("click", (e) => {
   const proofBtn = e.target.closest("[data-proof]");
   if (proofBtn) {
@@ -206,10 +321,43 @@ app.addEventListener("click", (e) => {
     closeDrawer();
     return;
   }
-  if (e.target.id === "drawer-overlay") closeDrawer();
+  if (e.target.id === "drawer-overlay") {
+    closeDrawer();
+    return;
+  }
+  const cartBtn = e.target.closest("[data-cart]");
+  if (cartBtn) {
+    toggleCart(cartBtn.dataset.cart);
+    return;
+  }
+  const cartRemove = e.target.closest("[data-cart-remove]");
+  if (cartRemove) {
+    cart.delete(cartRemove.dataset.cartRemove);
+    updateCartUI();
+    return;
+  }
+  if (e.target.closest("[data-cart-close]")) {
+    closeCart();
+    return;
+  }
+  if (e.target.id === "cart-overlay") {
+    closeCart();
+    return;
+  }
+  if (e.target.id === "cart-open") {
+    openCart();
+    return;
+  }
+  if (e.target.id === "cart-clear") {
+    cart.clear();
+    updateCartUI();
+    return;
+  }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") closeDrawer();
+  if (e.key === "Escape") {
+    if (!closeCart()) closeDrawer();
+  }
 });
 
 function listView(s) {
@@ -257,8 +405,11 @@ function listView(s) {
   const pristine = !s.q && !s.cat && !s.store && !s.min && !s.verdict && s.sort === "strength";
   const openId = s.proof || (pristine ? "airpods-4" : "");
   const openDeal = openId ? deals.find((d) => d.id === openId) || null : null;
+  // v4: the cart drawer opens on load only for the ?cartview=1 deep link
+  // (screenshot #3) — never by default, so the cover stays clean.
+  const audit = cartAuditNow();
 
-  return toolbar + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<p class="countline" style="margin-top:18px">*Real savings count one of each deal at its sale price vs its 90-day typical street price — not the store's "was" price. Streaming is priced per month.</p>` + drawerShell(openDeal);
+  return toolbar + radarPanel() + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<div id="cartbar-wrap">${cartBarHtml(audit, compare.size > 0)}</div>` + `<p class="countline" style="margin-top:18px">*Real savings count one of each deal at its sale price vs its 90-day typical street price — not the store's "was" price. Streaming is priced per month.</p>` + drawerShell(openDeal) + cartShell(s.cartview, audit);
 }
 
 // Re-render only the grid + count line, keeping the toolbar (and the search
@@ -284,6 +435,11 @@ function readStateFromDom() {
     min: Number(document.getElementById("min").value || 0),
     sort: document.getElementById("sort").value,
     verdict: document.querySelector('.chip[aria-pressed="true"]')?.dataset.verdict || "",
+    // v4: carry the cart + open drawers through search/filter changes,
+    // so typing in the search box never empties the cart.
+    cart: new Set(cart),
+    cartview: cartOpen,
+    proof: document.querySelector("#drawer-panel [data-deal]")?.dataset.deal || "",
   };
 }
 
@@ -337,24 +493,29 @@ function bindCompareButtons() {
   });
 }
 
-function bindChecker() {
+function bindChecker(stack) {
   const saleEl = document.getElementById("ck-sale");
   const wasEl = document.getElementById("ck-was");
   const usualEl = document.getElementById("ck-usual");
+  const stackEl = document.getElementById("ck-stack");
   if (!saleEl || !wasEl || !usualEl) return;
+  let stackOn = !!stack;
   const update = () => {
     const sale = parseFloat(saleEl.value);
     const was = parseFloat(wasEl.value);
     const usual = parseFloat(usualEl.value);
+    stackOn = stackEl ? stackEl.checked : stackOn;
     const p = new URLSearchParams();
     if (saleEl.value) p.set("sale", saleEl.value);
     if (wasEl.value) p.set("was", wasEl.value);
     if (usualEl.value) p.set("usual", usualEl.value);
+    if (stackOn) p.set("stack", "1");
     history.replaceState(null, "", "#/check" + (p.toString() ? "?" + p.toString() : ""));
     const res = document.getElementById("ck-result");
-    if (res) res.innerHTML = checkerResult(checkDeal(sale, was, usual), sale, was, usual);
+    if (res) res.innerHTML = checkerResult(checkDeal(sale, was, usual), sale, was, usual, stackOn);
   };
   for (const el of [saleEl, wasEl, usualEl]) el.addEventListener("input", update);
+  if (stackEl) stackEl.addEventListener("change", update);
   const ex = document.getElementById("ck-example");
   if (ex) {
     ex.addEventListener("click", (e) => {
@@ -379,6 +540,11 @@ function render() {
   // deal list; hiding it on detail/compare/check/how keeps their content at
   // the top of the viewport (and inside the screenshot frame).
   document.body.classList.toggle("compact", !isList);
+  // v4: the cart is rebuilt from the hash on every render (hashchange), so
+  // a deep link (?cart=…&cartview=1) and a plain navigation always agree.
+  const s = parseQuery(hash);
+  cart = s.cart;
+  cartOpen = s.cartview;
 
   if (dealMatch) {
     const found = deals.find((d) => d.id === decodeURIComponent(dealMatch[1]));
@@ -388,7 +554,13 @@ function render() {
     const qp = new URLSearchParams(hash.split("?")[1] || "");
     const proofId = qp.get("proof") || (found && found.id === "airpods-4" ? "airpods-4" : "");
     const openDeal = proofId ? deals.find((d) => d.id === proofId) || null : null;
-    app.innerHTML = found ? detail(found, deals.filter((d) => d.category === found.category && d.id !== found.id)) + drawerShell(openDeal) : missing();
+    const audit = cartAuditNow();
+    app.innerHTML = found
+      ? detail(found, deals.filter((d) => d.category === found.category && d.id !== found.id), cart.has(found.id), cart.size >= CART_MAX) +
+        drawerShell(openDeal) +
+        `<div id="cartbar-wrap">${cartBarHtml(audit, compare.size > 0)}</div>` +
+        cartShell(cartOpen, audit)
+      : missing();
     bindCompareButtons();
   } else if (compareMatch) {
     const p = new URLSearchParams(hash.split("?")[1] || "");
@@ -399,20 +571,41 @@ function render() {
   } else if (checkMatch) {
     const p = new URLSearchParams(hash.split("?")[1] || "");
     const vals = { sale: p.get("sale") || "", was: p.get("was") || "", usual: p.get("usual") || "" };
+    const stack = p.get("stack") === "1";
     document.title = "Check your own deal | Friday Proof";
-    app.innerHTML = checkerPage(vals);
-    bindChecker();
+    app.innerHTML = checkerPage(vals, stack);
+    bindChecker(stack);
   } else if (howMatch) {
     document.title = "How we check prices | Friday Proof";
     app.innerHTML = howPage();
   } else {
     document.title = "Friday Proof — Black Friday Deal Finder";
-    const s = parseQuery(hash);
     app.innerHTML = listView(s);
     bindList();
   }
+  // v4: keep the nav cart count in sync after every render.
+  const navN = document.getElementById("nav-cart-n");
+  if (navN) navN.textContent = cart.size ? ` (${cart.size})` : "";
   window.scrollTo(0, 0);
   window.__shotReady = true;
+}
+
+// v4: the nav "Cart" link opens the cart drawer. On a view that renders
+// the cart shell (list / detail) it opens in place; on compare / check /
+// how it navigates to the list with the cart deep link (?cart=…&cartview=1).
+const navCart = document.getElementById("nav-cart");
+if (navCart) {
+  navCart.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (document.getElementById("cart-overlay")) {
+      openCart();
+    } else {
+      const p = new URLSearchParams();
+      if (cart.size) p.set("cart", [...cart].join(","));
+      p.set("cartview", "1");
+      location.hash = "#/?" + p.toString();
+    }
+  });
 }
 
 renderStats();
