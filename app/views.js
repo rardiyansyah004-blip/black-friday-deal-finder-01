@@ -1,4 +1,4 @@
-// Friday Proof — view templates, v2. Pure functions of the deal data: cards,
+// Friday Proof — view templates, v3. Pure functions of the deal data: cards,
 // the detail page, the compare table, the methodology page and the
 // "Check your own deal" calculator. No network, no images — every tile is
 // CSS, every chart is inline SVG, every string is in data.js.
@@ -8,7 +8,15 @@
 // low and the retailer's "was" price, with the % below typical (never the
 // inflated "was") shown in high contrast. Skip deals get a red verdict and
 // a "Was price inflated" badge.
-import { VERDICTS, belowTypicalPct, checkDeal, money, realSaved } from "./data.js";
+// v3: each card opens its "Expanded Proof Detail" — a drawer with the
+// 90-day price curve (six tracked prices, 1 Sep – 27 Nov, with the October
+// Fake Hike peak and the Black Friday drop labelled) and a cross-store
+// matrix (Amazon / Walmart / Best Buy / Target on 27 Nov, with stock and
+// a best-price highlight). The AirPods 4 card opens with its drawer
+// already expanded on the main view, so the proof is visible without a
+// click. The drawer is a modal overlay: one shell in the page, filled by
+// main.js with proofDrawer(deal) when a card's button is pressed.
+import { VERDICTS, belowTypicalPct, checkDeal, getHistory90d, getStoreMatrix, money, realSaved } from "./data.js";
 
 const TILE_CLASS = {
   Audio: "tile-audio",
@@ -92,6 +100,88 @@ export function proofBar(d) {
 </svg>`;
 }
 
+/**
+ * Pure-SVG 90-day price curve (v3). Six tracked prices, 1 Sep – 27 Nov
+ * 2026, from getHistory90d(d). The late-October point is labelled
+ * "October Fake Hike" (red — the push back up toward the "was" price),
+ * the final point "Black Friday" (amber diamond — the sale price), and
+ * the October-low point is labelled when the Black Friday price beat it.
+ * Only those three points carry price labels, so nothing overlaps; the
+ * other points are dots, and three dashed gridlines show the scale.
+ */
+export function historyCurve(d) {
+  const hist = getHistory90d(d);
+  const vals = hist.map((h) => h.p);
+  const lo = Math.min(...vals);
+  const hi = Math.max(...vals);
+  const span = Math.max(hi - lo, 1);
+  const x0 = 56;
+  const x1 = 604;
+  const yTop = 52;
+  const yBot = 212;
+  const X = (i) => +(x0 + (i * (x1 - x0)) / 5).toFixed(1);
+  const Y = (v) => +(yBot - ((v - lo) / span) * (yBot - yTop)).toFixed(1);
+  const pts = hist.map((h, i) => `${X(i)},${Y(h.p)}`).join(" ");
+  const gridVals = [lo, (lo + hi) / 2, hi];
+  const peak = hist[4];
+  const bf = hist[5];
+  const octLow = hist[3];
+  // The October-low label only shows when the October low sits visibly
+  // below the peak on screen (at least 18px — a label is ~12px tall).
+  // On a flat curve (e.g. the Switch 2 bundle, where the October low and
+  // the peak are the same $549.99) the two labels would sit on the same
+  // row and overlap, so the low label is dropped there — the peak label
+  // already shows that price.
+  const lowLabel = octLow.p > bf.p && Y(octLow.p) - Y(peak.p) >= 18
+    ? `<text x="${X(3)}" y="${Y(octLow.p) - 14}" text-anchor="middle" class="hc-low">Oct low ${money(octLow.p)}</text>`
+    : "";
+  return `<svg class="histcurve" viewBox="0 0 640 300" role="img" aria-label="90-day price history: ${hist.map((h) => `${h.d} ${money(h.p)}`).join(", ")}">
+  <title>90-day price history for ${esc(d.title)}</title>
+  ${gridVals.map((v) => `<line x1="${x0}" y1="${Y(v)}" x2="${x1}" y2="${Y(v)}" class="hc-grid" /><text x="8" y="${Y(v) + 4}" class="hc-grid-label">${money(v)}</text>`).join("")}
+  <polygon points="${x0},${yBot} ${pts} ${x1},${yBot}" class="hc-area" />
+  <polyline points="${pts}" class="hc-line" />
+  ${hist.map((h, i) => `<circle cx="${X(i)}" cy="${Y(h.p)}" r="4.5" fill="${i === 4 ? "#ff6b6b" : i === 5 ? "#ffb020" : i === 3 ? "#2fd67a" : "#5eb2ff"}" />`).join("")}
+  <text x="${X(4)}" y="${Y(peak.p) - 14}" text-anchor="middle" class="hc-peak">October Fake Hike ${money(peak.p)}</text>
+  ${lowLabel}
+  <text x="${X(5)}" y="${Y(bf.p) - 14}" text-anchor="end" class="hc-bf">Black Friday ${money(bf.p)}</text>
+  ${hist.map((h, i) => `<text x="${X(i)}" y="238" text-anchor="middle" class="hc-date">${h.d}</text>`).join("")}
+  <text x="${x0}" y="268" class="hc-date">1 Sep – 27 Nov 2026 · static snapshot, not live</text>
+</svg>`;
+}
+
+/**
+ * Cross-store matrix (v3): what the same product costs at Amazon,
+ * Walmart, Best Buy and Target on 27 Nov 2026, from getStoreMatrix(d).
+ * The cheapest row is highlighted as the best price.
+ */
+export function storeMatrixTable(d) {
+  const rows = getStoreMatrix(d);
+  const best = Math.min(...rows.map((r) => r.price));
+  const unit = d.unit ? `<small>${esc(d.unit)}</small>` : "";
+  return `<table class="matrix">
+  <tr><th>Store</th><th>Price · 27 Nov</th><th>Stock</th><th></th></tr>
+  ${rows.map((r) => `<tr${r.price === best ? ' class="best"' : ""}><td><b>${esc(r.store)}</b></td><td>${money(r.price)}${unit}</td><td>${r.stock === "Low stock" ? '<span class="lowstock">Low stock</span>' : "In stock"}</td><td>${r.price === best ? '<span class="besttag">★ BEST PRICE</span>' : ""}</td></tr>`).join("")}
+</table>`;
+}
+
+/**
+ * The "Expanded Proof Detail" drawer content (v3): heading + 90-day curve
+ * + cross-store matrix + the static-source note. main.js renders this
+ * into the modal shell and opens it when a card's button is pressed.
+ * data-deal names the deal shown, so a test can check the drawer really
+ * holds the deal whose button was pressed.
+ */
+export function proofDrawer(d) {
+  const unit = d.unit ? `<small>${esc(d.unit)}</small>` : "";
+  return `<div class="drawer-head" data-deal="${d.id}">
+  <div><h3>90-Day Price History &amp; Cross-Store Matrix</h3><p class="drawer-sub">${esc(d.title)} &middot; ${esc(d.store)} &middot; sale ${money(d.salePrice)}${unit}</p></div>
+  <button class="drawer-close" data-drawer-close aria-label="Close price history">✕</button>
+</div>
+${historyCurve(d)}
+${storeMatrixTable(d)}
+<p class="drawer-note">Static snapshot from the sources named on the card — tracked 1 Sep – 27 Nov 2026, checked 27 Nov 2026. Prices move all day on Black Friday; this is not live scraping, so confirm the price at checkout before you buy.</p>`;
+}
+
 export function verdictBox(d) {
   const v = VERDICTS[d.verdict];
   const badge = d.caveatBadge ? `<span class="caveat">⚠ ${esc(d.caveatBadge)}</span>` : "";
@@ -119,6 +209,7 @@ export function card(d, compared) {
       <p class="proof-note">${esc(d.proofNote)}</p>
       ${saveLine}
       ${verdictBox(d)}
+      <button class="btn proof-btn" data-proof="${d.id}" aria-expanded="${d.id === "airpods-4" ? "true" : "false"}">View 90d Curve &amp; Store Matrix</button>
       <p class="checked">Checked 27 Nov 2026 &middot; Source: ${esc(d.sourceName)}, ${esc(d.sourceDate)}</p>
       <div class="card-actions">
         <a class="btn btn-primary" href="${esc(d.url)}" target="_blank" rel="noopener">View at ${esc(d.store)} &rarr;</a>
@@ -155,6 +246,7 @@ export function detail(d, others) {
         <div class="cta-row">
           <a class="btn btn-primary" href="${esc(d.url)}" target="_blank" rel="noopener">Buy at ${esc(d.store)} &rarr;</a>
           <button class="btn cmp" data-cmp="${d.id}">Compare this deal</button>
+          <button class="btn proof-btn" data-proof="${d.id}" aria-expanded="${d.id === "airpods-4" ? "true" : "false"}">View 90d Curve &amp; Store Matrix</button>
         </div>
         ${same ? `<div class="panel also"><h2>More ${esc(d.category)} deals</h2><ul class="facts">${same}</ul></div>` : ""}
       </div>
@@ -221,6 +313,8 @@ export function howPage() {
       <p>Four of our 32 deals are skips — products whose Black Friday price is exactly the price they sold at all autumn, dressed up with a "was" price nobody paid. We kept them in on purpose and gave them their own filter, because a finder that only ever says "great deal" is an advert, not a finder. Use the <b>Skip / Inflated</b> filter to see all four, and the <b>Check your own deal</b> tool to test any other "deal" the same way.</p></div>
     <div class="panel"><h2>6. Compare across stores</h2>
       <p>Where a second store sells the same product, the detail page shows its price too — so a "deal" that another store beats by $222 (our Target TCL TV vs Walmart's Hisense) gets called out, not hidden. The compare tool puts any three deals side by side, with typical prices and prior lows included.</p></div>
+    <div class="panel"><h2>7. Open the 90-day history</h2>
+      <p>New in v3: every card has a <b>"View 90d Curve &amp; Store Matrix"</b> button. It opens the deal's price history from 1 September to Black Friday — the October low, the late-October hike back toward the "was" price, and the Black Friday drop — plus what the same product costs at Amazon, Walmart, Best Buy and Target on 27 November, with a stock status per store. The history is a static snapshot from the sources named on the card, and the curve can never contradict the card: its lowest point is the prior low (or the sale price, when the sale is a new low), its October peak reaches the "was" price exactly on the flagged fake markdowns, and its last point is the sale price. The AirPods 4 card opens with its history already expanded, so the proof is visible without a click.</p></div>
     <div class="panel"><h2>What we will not do</h2>
       <p>We never invent a price, a product or a store link. We never copy another site's text or design. And we never pretend a price is frozen: Black Friday prices move all day, so every page tells you to confirm the price at checkout. Five of our 32 deals are routine sales and four are skips — a finder that only ever says "great deal" is an advert, not a finder.</p></div>
     <div class="panel"><h2>Sources used on 27 Nov 2026</h2>

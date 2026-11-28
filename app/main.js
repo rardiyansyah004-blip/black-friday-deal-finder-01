@@ -1,4 +1,4 @@
-// Friday Proof — app logic, v2. Hash routes, so every view is a shareable link
+// Friday Proof — app logic, v3. Hash routes, so every view is a shareable link
 // and a screenshot can open any state directly:
 //
 //   #/                                  all deals
@@ -7,6 +7,8 @@
 //   #/compare?a=..&b=..&c=..            side-by-side comparison
 //   #/check?sale=149&was=249&usual=199  check your own deal
 //   #/how                               how we check prices
+//   #/?proof=<id>                       all deals, with that deal's 90-day
+//                                       history drawer open (shareable link)
 //
 // window.__shotReady is false while a view renders and true once it is on
 // screen, so a screenshot script knows when to capture. All state lives in
@@ -16,8 +18,21 @@
 // result area on input, for the same reason. The hero (intro + KPI strip)
 // shows only on the deal list — detail, compare, check and how pages get a
 // compact header so their content starts at the top of the viewport.
+//
+// v3 — the 90-day history drawer. Every card and detail page has a
+// "View 90d Curve & Store Matrix" button that opens a modal drawer with
+// the deal's 90-day price curve and cross-store matrix (proofDrawer from
+// views.js). One modal shell is rendered per view; opening it fills the
+// shell and records ?proof=<id> in the hash (replaceState, no re-render),
+// closing it removes the param again. On the pristine main view (#/ with
+// no search, filter or sort) the featured AirPods 4 drawer opens by
+// default, so the proof is visible without a click; the same holds on the
+// AirPods 4 detail page. Escape, the ✕ button and a click on the dimmed
+// backdrop all close it. Focus moves into the drawer when it opens and
+// back to the card's button when it closes, so keyboard users never lose
+// their place.
 import { CATEGORIES, CHECKED_LABEL, STORES, VERDICTS, VERDICT_RANK, belowTypicalPct, checkDeal, deals, money, realSaved } from "./data.js";
-import { card, checkerPage, checkerResult, compareTable, detail, howPage, missing } from "./views.js";
+import { card, checkerPage, checkerResult, compareTable, detail, howPage, missing, proofDrawer } from "./views.js";
 
 const app = document.getElementById("app");
 const statsEl = document.getElementById("stats");
@@ -49,6 +64,7 @@ function parseQuery(hash) {
     min: Number(p.get("min") || 0),
     sort,
     verdict,
+    proof: p.get("proof") || "",
   };
 }
 
@@ -60,6 +76,7 @@ function stateToHash(s) {
   if (s.min) p.set("min", String(s.min));
   if (s.sort !== "strength") p.set("sort", s.sort);
   if (s.verdict) p.set("verdict", s.verdict);
+  if (s.proof) p.set("proof", s.proof);
   const qs = p.toString();
   return "#/" + (qs ? "?" + qs : "");
 }
@@ -123,6 +140,78 @@ function verdictCounts() {
   return c;
 }
 
+// --- v3 drawer -------------------------------------------------------------
+// One modal shell per view. openDrawer fills it with proofDrawer(deal) and
+// records ?proof=<id> in the hash; closeDrawer hides it and drops the
+// param. The shell is rendered by listView/detail with the initial deal
+// already inside when the view opens with a drawer (deep link, or the
+// AirPods 4 default on the pristine main view).
+function drawerShell(openDeal) {
+  const inner = openDeal ? proofDrawer(openDeal) : "";
+  return `<div class="drawer-overlay${openDeal ? " open" : ""}" id="drawer-overlay"><div class="drawer" role="dialog" aria-modal="true" aria-label="90-day price history and cross-store matrix" id="drawer-panel">${inner}</div></div>`;
+}
+
+function setProofParam(id) {
+  const hash = location.hash || "#/";
+  const [base, query] = hash.split("?");
+  const p = new URLSearchParams(query || "");
+  if (id) p.set("proof", id);
+  else p.delete("proof");
+  const qs = p.toString();
+  history.replaceState(null, "", base + (qs ? "?" + qs : ""));
+}
+
+function openDrawer(id) {
+  const d = deals.find((x) => x.id === id);
+  const overlay = document.getElementById("drawer-overlay");
+  const panel = document.getElementById("drawer-panel");
+  if (!d || !overlay || !panel) return false;
+  panel.innerHTML = proofDrawer(d);
+  overlay.classList.add("open");
+  document.querySelectorAll("[data-proof]").forEach((b) => b.setAttribute("aria-expanded", b.dataset.proof === id ? "true" : "false"));
+  setProofParam(id);
+  // Keyboard users land on the drawer's close button when it opens.
+  // preventScroll: the drawer is a fixed overlay, and focusing must not
+  // move the page underneath (a screenshot of the cover caught the page
+  // scrolled to the AirPods 4 card because focus() scrolled it into view).
+  const closer = panel.querySelector("[data-drawer-close]");
+  if (closer) closer.focus({ preventScroll: true });
+  return true;
+}
+
+function closeDrawer() {
+  const overlay = document.getElementById("drawer-overlay");
+  if (!overlay || !overlay.classList.contains("open")) return false;
+  // Remember which deal was open, so focus can return to its button.
+  const openId = document.querySelector("#drawer-panel [data-deal]")?.dataset.deal || "";
+  overlay.classList.remove("open");
+  document.querySelectorAll("[data-proof]").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  setProofParam("");
+  if (openId) document.querySelector(`[data-proof="${openId}"]`)?.focus({ preventScroll: true });
+  return true;
+}
+
+// Delegated clicks, bound once: the grid re-renders on every keystroke, so
+// per-button listeners would not survive. The overlay is inside #app, so
+// backdrop clicks (target === overlay) and the ✕ button are handled here
+// too, alongside the [data-proof] open buttons and the [data-cmp] compare
+// toggles (compare still re-renders the view, so it stays in render()).
+app.addEventListener("click", (e) => {
+  const proofBtn = e.target.closest("[data-proof]");
+  if (proofBtn) {
+    openDrawer(proofBtn.dataset.proof);
+    return;
+  }
+  if (e.target.closest("[data-drawer-close]")) {
+    closeDrawer();
+    return;
+  }
+  if (e.target.id === "drawer-overlay") closeDrawer();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeDrawer();
+});
+
 function listView(s) {
   const shown = applyFilters(deals, s);
   const c = verdictCounts();
@@ -162,7 +251,14 @@ function listView(s) {
       ? `<div class="comparebar"><span>${compare.size} deal${compare.size > 1 ? "s" : ""} selected to compare</span><span class="spacer"></span><button id="cmp-clear" type="button">Clear</button><button id="cmp-go" class="primary" type="button" ${compare.size < 2 ? "disabled" : ""}>Compare ${compare.size < 2 ? "(pick 2+)" : ""}</button></div>`
       : "";
 
-  return toolbar + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<p class="countline" style="margin-top:18px">*Real savings count one of each deal at its sale price vs its 90-day typical street price — not the store's "was" price. Streaming is priced per month.</p>`;
+  // v3: which drawer opens on load. A ?proof=<id> deep link wins; otherwise
+  // the pristine main view (no search, filter or sort) opens the featured
+  // AirPods 4 drawer by default.
+  const pristine = !s.q && !s.cat && !s.store && !s.min && !s.verdict && s.sort === "strength";
+  const openId = s.proof || (pristine ? "airpods-4" : "");
+  const openDeal = openId ? deals.find((d) => d.id === openId) || null : null;
+
+  return toolbar + `<div id="gridwrap">${gridHtml(shown)}</div>` + bar + `<p class="countline" style="margin-top:18px">*Real savings count one of each deal at its sale price vs its 90-day typical street price — not the store's "was" price. Streaming is priced per month.</p>` + drawerShell(openDeal);
 }
 
 // Re-render only the grid + count line, keeping the toolbar (and the search
@@ -287,7 +383,12 @@ function render() {
   if (dealMatch) {
     const found = deals.find((d) => d.id === decodeURIComponent(dealMatch[1]));
     document.title = `${found ? found.title : "Not found"} | Friday Proof`;
-    app.innerHTML = found ? detail(found, deals.filter((d) => d.category === found.category && d.id !== found.id)) : missing();
+    // v3: the drawer opens on the AirPods 4 detail page by default, or
+    // for whichever deal a ?proof=<id> deep link names.
+    const qp = new URLSearchParams(hash.split("?")[1] || "");
+    const proofId = qp.get("proof") || (found && found.id === "airpods-4" ? "airpods-4" : "");
+    const openDeal = proofId ? deals.find((d) => d.id === proofId) || null : null;
+    app.innerHTML = found ? detail(found, deals.filter((d) => d.category === found.category && d.id !== found.id)) + drawerShell(openDeal) : missing();
     bindCompareButtons();
   } else if (compareMatch) {
     const p = new URLSearchParams(hash.split("?")[1] || "");

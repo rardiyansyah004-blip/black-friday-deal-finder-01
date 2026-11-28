@@ -4,9 +4,18 @@
 // deals held in app/data.js, nothing loaded over the network, each deal
 // linking out to its store. v2 (round 2 resubmit) adds the price-proof bar
 // on every card, a fourth verdict (skip — inflated was), a fake-markdown
-// filter, and a static "Check your own deal" calculator at #/check. This
-// program hands it in: it copies app/ and screenshots/ from beside this
-// file to /output and writes /output/dossier.json with buildDossier from
+// filter, and a static "Check your own deal" calculator at #/check.
+// v3 (round 3 resubmit) adds exactly one feature: the per-deal "Expanded
+// Proof Detail" drawer — a 90-day price curve (1 Sep – 27 Nov 2026, with
+// the October Fake Hike peak and the Black Friday drop labelled) and a
+// cross-store matrix (Amazon / Walmart / Best Buy / Target on 27 Nov),
+// opened from a button on every card and open by default on the featured
+// AirPods 4. The drawer is deep-linkable too: #/?proof=<deal-id> opens it
+// for that deal. Nothing else changes: same 32 deals, same verdict mix
+// (5 new-low / 18 strong / 5 routine / 4 skip), same KPI strip, same
+// proof bar, same filters and sorts, same calculator. This program hands
+// it in: it copies app/ and screenshots/ from beside this file to /output
+// and writes /output/dossier.json with buildDossier from
 // vendor/makefun-frontend.ts — the summary the judge reads (screenshots,
 // first-load files and bytes, and the source outline). Leave
 // vendor/makefun-frontend.ts exactly as the kit shipped it: the scorer
